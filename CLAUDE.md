@@ -33,8 +33,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 核心流水线（4+1 阶段）
 
 ```
-阶段1: ~analyze  → novel-analyzer → insight-architect → review-director
-                   产出: 清洗文本、分析报告、角色档案、洞察报告
+阶段1: ~analyze  → novel-analyzer → insight-architect → genre-classifier → review-director
+                   产出: 清洗文本、分析报告、角色档案、洞察报告、细粒度题材分类
 
 阶段2: ~plan     → episode-architect → emotion-architect → review-director
                    产出: 分集目录、项目进度、情绪曲线
@@ -50,13 +50,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 每阶段执行 **生成→审核→回改→复审→PASS** 循环，关键阶段双重审核（业务审核+合规审核）。
 
-### 保留的 10 个 Agent
+### 保留的 11 个 Agent
 
 | Agent | 阶段 | 职责 |
 |-------|------|------|
 | `knowledge-curator` | 0 | 知识库维护、参考剧本管理 |
 | `novel-analyzer` | 1 | 文本清洗、性别频判定、冲突建模、角色档案 |
 | `insight-architect` | 1 | "开天眼"方法论、揭示隐藏真相、设计核心冲突 |
+| `genre-classifier` | 1 | **🆕 细粒度题材分类**：基于起点分类体系精确到子类，匹配改编注意事项，不确定时询问用户 |
 | `episode-architect` | 2 | 分集目录、情绪曲线、卡点设计 |
 | `emotion-architect` | 2 | 情绪曲线、心理预期管理、认知负荷控制 |
 | `script-writer` | 3 | **核心**：单集剧本创作(YAML)、参考剧本检索、风格自分析 |
@@ -84,7 +85,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 核心结构：
 ```yaml
 meta: { script_title, source_novel, total_episodes, ... }
-adaptation_summary: { genre, sub_genre, core_conflict, main_characters, ... }
+adaptation_summary: { genre, sub_genre, genre_detail: {...}, core_conflict, main_characters, ... }
 naming_conventions: [...]
 episodes:
   - episode_number: 1

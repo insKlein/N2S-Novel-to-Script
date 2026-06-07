@@ -23,6 +23,7 @@ STATE_AGENT_KEYS = [
     "knowledge-curator",
     "novel-analyzer",
     "insight-architect",
+    "genre-classifier",
     "episode-architect",
     "emotion-architect",
     "script-writer",
@@ -162,6 +163,97 @@ def build_mock_analysis(title: str, novel: str) -> Dict[str, Any]:
     }
 
 
+def build_mock_classification(summary: Dict[str, Any]) -> Dict[str, Any]:
+    genre = summary.get("genre", "待定")
+    sub = summary.get("sub_genre", "待定")
+    return {
+        "primary_genre": genre,
+        "sub_genre": sub,
+        "sub_genre_detail": f"{sub}-自动细分",
+        "confidence": 50,
+        "alternative_genres": [],
+        "adaptation_notes": ["请在正式模式下输入 API Key 以获取精确分类和改编建议。"],
+        "user_queried": False,
+        "classification_basis": "Mock 模式：基于 novel-analyzer 粗判结果自动生成，未做细粒度分类。",
+    }
+
+
+def classify_genre(root: Path, mock: bool, client: LLMClient | None) -> Dict[str, Any]:
+    analysis = load_json(root / "analysis" / "analysis.json")
+    summary = analysis.get("summary", {})
+    novel_text = read_text(root / "analysis" / "cleaned_text.txt")
+
+    if mock:
+        data = build_mock_classification(summary)
+        write_text(
+            root / "analysis" / "genre-classification.json",
+            json.dumps(data, ensure_ascii=False, indent=2),
+        )
+        write_log(root, "genre-classifier", f"{date.today()} PASS classify (mock) {summary.get('genre', 'N/A')}")
+        return data
+
+    taxonomy = ""
+    taxonomy_path = ROOT / "references" / "genre-taxonomy.md"
+    if taxonomy_path.exists():
+        taxonomy = read_text(taxonomy_path)[:12000]
+
+    genre = summary.get("genre", "待定")
+    sub = summary.get("sub_genre", "")
+
+    prompt = (
+        "你是起点中文网资深编辑，精通网文题材细粒度分类。"
+        "请基于以下小说原文和已有粗判结果，输出细粒度分类 JSON。\n\n"
+        f"=== 已有粗判 ===\n"
+        f"genre(男频/女频): {genre}\n"
+        f"sub_genre: {sub}\n\n"
+        f"=== 分类体系参考 ===\n{taxonomy}\n\n"
+        f"=== 小说原文 ===\n{novel_text[:12000]}\n\n"
+        "=== 输出要求 ===\n"
+        "JSON 字段: primary_genre, sub_genre, sub_genre_detail(精确到具体流派如'高手下山'), "
+        "confidence(0-100), alternative_genres(数组,每项含genre/sub_genre/sub_genre_detail/confidence), "
+        "adaptation_notes(从taxonomy对应章节提取,不要自编), "
+        "user_queried(true/false,置信度<70%时为true), "
+        "classification_basis(一句话说明判断依据)。\n\n"
+        "重要: 如果无法确定到具体子类，设置 user_queried=true 并在 alternative_genres 中列出所有可能。"
+    )
+    system = (
+        "你是起点中文网资深编辑，专门做网文分类。"
+        "只输出 JSON 对象，不要输出 Markdown，不要输出解释。"
+        "改编注意事项必须从提供的 taxonomy 中提取，不要自己编造。"
+    )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ]
+    if client is None:
+        data = build_mock_classification(summary)
+    else:
+        data = client.complete_json(messages, temperature=0.3)
+
+    confidence = data.get("confidence", 0)
+    user_queried = data.get("user_queried", False)
+
+    if confidence < 70 or user_queried:
+        alternatives = data.get("alternative_genres", [])
+        alt_str = "\n".join(
+            f"  - {a.get('sub_genre_detail', a.get('sub_genre', '未知'))} (置信度: {a.get('confidence', '?')}%)"
+            for a in alternatives[:5]
+        )
+        print(f"\n⚠️ 题材分类不确定 (置信度: {confidence}%)")
+        print(f"  首选: {data.get('sub_genre_detail', data.get('sub_genre', '未知'))}")
+        if alt_str:
+            print(f"  候选:\n{alt_str}")
+        print(f"  依据: {data.get('classification_basis', 'N/A')}")
+        print("  请在后续对话中确认最终分类，或输入 'ok' 接受首选。\n")
+
+    write_text(
+        root / "analysis" / "genre-classification.json",
+        json.dumps(data, ensure_ascii=False, indent=2),
+    )
+    write_log(root, "genre-classifier", f"{date.today()} PASS classify confidence={confidence}")
+    return data
+
+
 def command_analyze(args: argparse.Namespace) -> Path:
     input_path = Path(args.input)
     novel = read_text(input_path)
@@ -185,6 +277,7 @@ def command_analyze(args: argparse.Namespace) -> Path:
     write_text(root / "analysis" / "analysis.json", json.dumps(data, ensure_ascii=False, indent=2))
     write_log(root, "novel-analyzer", f"{date.today()} PASS analyze {args.title}")
     write_log(root, "insight-architect", f"{date.today()} PASS insight {args.title}")
+    classify_genre(root, args.mock, client)
     return root
 
 
@@ -245,8 +338,24 @@ def load_json(path: Path) -> Dict[str, Any]:
 
 
 def build_mock_script(title: str, episode_number: int, analysis: Dict[str, Any]) -> Dict[str, Any]:
-    summary = analysis.get("summary", {})
+    summary = dict(analysis.get("summary", {}))
     naming = analysis.get("naming_conventions", [])
+
+    # 注入 genre_detail（若存在）
+    genre_detail = analysis.get("genre_detail")
+    if not genre_detail:
+        genre_detail = {
+            "primary_genre": summary.get("genre", "待定"),
+            "sub_genre": summary.get("sub_genre", "待定"),
+            "sub_genre_detail": "自动细分",
+            "confidence": 50,
+            "alternative_genres": [],
+            "adaptation_notes": [],
+            "user_queried": False,
+            "classification_basis": "Mock 模式自动生成",
+        }
+    summary["genre_detail"] = genre_detail
+
     return {
         "meta": {
             "script_title": title,
@@ -406,13 +515,26 @@ def command_write(args: argparse.Namespace) -> Path:
     analysis = load_json(root / "analysis" / "analysis.json")
     plan = load_json(root / "planning" / "plan.json")
     refs = quick_search(args.keywords or analysis.get("summary", {}).get("sub_genre", ""), 5)
+
+    # 读取细粒度分类（若存在）
+    classification_path = root / "analysis" / "genre-classification.json"
+    classification_info = ""
+    if classification_path.exists():
+        gc = load_json(classification_path)
+        classification_info = (
+            f"题材细分：{gc.get('sub_genre_detail', gc.get('sub_genre', ''))}，"
+            f"改编注意事项：{'；'.join(gc.get('adaptation_notes', []))}\n"
+        )
+
     client = llm_or_mock(args.mock)
     prompt = (
         "请生成第 N 集剧本 JSON，严格符合 N2S YAML Schema。"
         "顶层必须包含 meta, adaptation_summary, naming_conventions, episodes, emotion_curve, quality_metrics。"
         "episodes 只包含当前集。元素 type 只能是 action/dialogue/inner_voice/flashback/screen_text/sound_effect。"
         "camera_note 只能是 特写/近景/中景/全景/远景，禁止运镜、转场、分镜、图片、视频提示词。\n\n"
-        f"剧名：{args.title}\n集数：{args.episode}\n分析：{json.dumps(analysis, ensure_ascii=False)[:12000]}\n"
+        f"剧名：{args.title}\n集数：{args.episode}\n"
+        f"{classification_info}"
+        f"分析：{json.dumps(analysis, ensure_ascii=False)[:12000]}\n"
         f"规划：{json.dumps(plan, ensure_ascii=False)[:12000]}\n参考检索：{json.dumps(refs, ensure_ascii=False)[:4000]}"
     )
     data = json_from_llm(client, "写集", prompt, build_mock_script(args.title, args.episode, analysis))

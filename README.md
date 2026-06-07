@@ -1,6 +1,6 @@
 # N2S-Novel-to-Script
 
-N2S 是一款 AI 辅助剧本创作工具，面向希望把小说改编成短剧/剧本初稿的作者。它参考 `novel-to-script-team` 的小说到剧本流程，只保留"小说文本 → 改编分析 → 分集规划 → YAML 剧本 → 审核报告"的核心链路。
+N2S 是一款 AI 辅助剧本创作工具，面向希望把小说改编成短剧/剧本初稿的作者。它参考 `novel-to-script-team` 的小说到剧本流程，只保留“小说文本 → 改编分析 → 分集规划 → YAML 剧本 → 审核报告”的核心链路。
 
 ## 核心能力
 
@@ -125,5 +125,3 @@ outputs/{剧本名}/
 本项目保留小说到剧本所需的 10 个 Agent、12 个 Skill 和核心 Reference；不包含图片生成、视频生成、导演制作环节。
 
 Web 架构说明见 [docs/web-architecture.md](docs/web-architecture.md)。
-
-详见 [CLAUDE.md](./CLAUDE.md) 和 [zmq/novel-to-script-team-分析文档.md](./zmq/novel-to-script-team-分析文档.md)。

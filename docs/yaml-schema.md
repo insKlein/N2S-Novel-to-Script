@@ -15,9 +15,27 @@ meta:
   total_episodes: 3
 
 adaptation_summary:
-  genre: "男频/女频/混合/待定"
+  genre: "男频/女频/混合/待定"          # novel-analyzer 粗判
   sub_genre: "重生复仇"
   target_audience: "目标读者/观众"
+  # --- genre-classifier 细粒度分类（新字段） ---
+  genre_detail:
+    primary_genre: "女频"
+    sub_genre: "古代言情"
+    sub_genre_detail: "经商种田"         # 精确到具体流派
+    confidence: 85                      # 0-100，<70 必须询问用户
+    alternative_genres:                 # 次选分类列表
+      - genre: "女频"
+        sub_genre: "古代言情"
+        sub_genre_detail: "宫闱宅斗"
+        confidence: 12
+    user_queried: false                 # 是否触发了用户询问
+    classification_basis: "主角从事商业活动，冲突以市场竞争为主"
+    adaptation_notes:                   # 从 genre-taxonomy.md 匹配
+      - "经商种田节奏友好——每集一个小商业里程碑"
+      - "场景控制在店铺/府邸/集市即可，成本低"
+      - "女主借势而非亲自出手——符合女频原则"
+  # --- 以上为 genre-classifier 输出 ---
   core_conflict: "核心冲突"
   main_characters:
     - name: "角色名"
